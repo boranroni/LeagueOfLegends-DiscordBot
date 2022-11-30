@@ -75,12 +75,27 @@ def get_profile_data(playerName,region):
   resp = requests.get(CHAMP_API)
   ChampsData = resp.json()
 
-  Champs = {}
+  ChampStr = ""
   
   for c in ChampsData:
-    Champs[c["championId"]] = c["championPoints"]
+    ChampStr = ChampStr + str(c["championId"]) + ":" + str(c["championPoints"]) + "\n"
 
-  summoner = summonerdata(playerName,Data["profileIconId"],Data["summonerLevel"],"plat 3","32","32","12",Champs,"fuckfect") 
+  
+
+  RANKED_API = f"https://{region}1.api.riotgames.com/lol/league/v4/entries/by-summoner/{summonerId}?api_key={LOL_API_KEY}"
+  resp = requests.get(RANKED_API)
+  RankedData = resp.json()
+
+  
+  rank = RankedData[1]["tier"] + " " + RankedData[1]["rank"].upper()
+  winrate = int(RankedData[1]["wins"])/(int(RankedData[1]["wins"])+int(RankedData[1]["losses"]))*100
+  
+
+  LIVE_GAME_API = f"https://tr1.api.riotgames.com/lol/spectator/v4/active-games/by-summoner/trJCZnq2-X5iHQb_3tgNiDYERJpBu7K4iM6mt4JzcSn4GA"
+  #get macth time, champ name
+  #if no game N/A playing
+
+  summoner = summonerdata(playerName,Data["profileIconId"],Data["summonerLevel"],rank,RankedData[1]["wins"],RankedData[1]["losses"],f"{winrate:.0f}",ChampStr,"fuckfect") 
 
   return summoner
 
