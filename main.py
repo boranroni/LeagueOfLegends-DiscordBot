@@ -1,5 +1,5 @@
 import discord
-import requests
+from requests import get
 import json
 import riotwatcher
 from time import sleep
@@ -19,7 +19,7 @@ intents.message_content = True
 client = discord.Client(intents=intents)
 
 
-class summonerdata:
+class Summoner:
     def __init__(
         self, name, icon, level, rank, win, lose, winrate, topchamps, livegame
     ) -> None:
@@ -46,8 +46,8 @@ async def on_message(message):
         return
 
     if message.content.startswith("!profile"):
-        playerName, playerRegion = get_name_region(message.content)
-        summoner = get_profile_data(playerName, playerRegion)
+        player_name, playerRegion = get_name_region(message.content)
+        summoner = get_profile_data(player_name, playerRegion)
 
         botMessage = createEmbed(summoner)
 
@@ -56,23 +56,21 @@ async def on_message(message):
 
 
 def get_champname(ChampIdList):
-    resp = requests.get(
-        "http://ddragon.leagueoflegends.com/cdn/12.6.1/data/en_US/champion.json"
-    )
+    resp = get("http://ddragon.leagueoflegends.com/cdn/12.6.1/data/en_US/champion.json")
     Data = resp.json()
 
 
 def get_name_region(message: str) -> tuple[str, str]:
     split = message.split(" ")
-    playerName = " ".join(split[2:])
+    player_name = " ".join(split[2:])
     region = split[1]
-    return playerName, region
+    return player_name, region
 
 
 def get_api_data(Link: str) -> dict:
     print("Getting data...")
-    while 1:
-        resp = requests.get(Link)
+    while True:
+        resp = get(Link)
         if resp.status_code == 200 or resp.status_code == 404:
             break
         print(f"Error {resp.status_code} happened. Sleeping for 10 sec...")
@@ -84,72 +82,72 @@ def get_api_data(Link: str) -> dict:
 
 def get_live_data(Link: str) -> tuple[bool, dict]:
 
-    resp = requests.get(Link)
+    resp = get(Link)
 
     return resp.status_code == 200, resp.json()
 
 
-def get_profile_data(playerName: str, region: str) -> summonerdata:
+def get_profile_data(player_name: str, region: str) -> Summoner:
 
     # Make request for all necessary data
 
-    API_URL = f"https://{region}1.api.riotgames.com/lol/summoner/v4/summoners/by-name/{playerName}?api_key={LOL_API_KEY}"
-    Data = get_api_data(API_URL)
+    API_URL = f"https://{region}1.api.riotgames.com/lol/summoner/v4/summoners/by-name/{player_name}?api_key={LOL_API_KEY}"
+    summoner_data = get_api_data(API_URL)
 
-    summonerId = Data["id"]
+    summoner_id = summoner_data["id"]
 
-    CHAMP_API = f"https://{region}1.api.riotgames.com/lol/champion-mastery/v4/champion-masteries/by-summoner/{summonerId}/top?count=3&api_key={LOL_API_KEY}"
-    ChampsData = get_api_data(CHAMP_API)
+    CHAMP_API = f"https://{region}1.api.riotgames.com/lol/champion-mastery/v4/champion-masteries/by-summoner/{summoner_id}/top?count=3&api_key={LOL_API_KEY}"
+    mastery_data = get_api_data(CHAMP_API)
 
-    RANKED_API = f"https://{region}1.api.riotgames.com/lol/league/v4/entries/by-summoner/{summonerId}?api_key={LOL_API_KEY}"
-    RankedData = get_api_data(RANKED_API)
+    RANKED_API = f"https://{region}1.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}?api_key={LOL_API_KEY}"
+    ranked_data = get_api_data(RANKED_API)
 
-    LIVE_GAME_API = f"https://{region}1.api.riotgames.com/lol/spectator/v4/active-games/by-summoner/{summonerId}?api_key={LOL_API_KEY}"
-    InGame, LiveData = get_live_data(LIVE_GAME_API)
+    LIVE_GAME_API = f"https://{region}1.api.riotgames.com/lol/spectator/v4/active-games/by-summoner/{summoner_id}?api_key={LOL_API_KEY}"
+    is_in_game, live_data = get_live_data(LIVE_GAME_API)
 
-    ChampStr = ""
-    for c in ChampsData:
+    mastery = ""
+    for c in mastery_data:
         # instead of champId, write championName
-        ChampStr = (
-            ChampStr + str(c["championId"]) + ": " + str(c["championPoints"]) + "\n"
+        mastery = (
+            mastery + str(c["championId"]) + ": " + str(c["championPoints"]) + "\n"
         )
 
-    rank = RankedData[1]["tier"] + " " + RankedData[1]["rank"].upper()
+    rank = ranked_data[1]["tier"] + " " + ranked_data[1]["rank"].upper()
     winrate = (
-        int(RankedData[1]["wins"])
-        / (int(RankedData[1]["wins"]) + int(RankedData[1]["losses"]))
+        int(ranked_data[1]["wins"])
+        / (int(ranked_data[1]["wins"]) + int(ranked_data[1]["losses"]))
         * 100
     )
 
     # if player is in game get necessary data
-    if InGame:
-        GameLength = str(LiveData["gameLength"]).split(" ")[0]
-        for participant in LiveData["participants"]:
-            if participant["summonerId"] == summonerId:
-                LiveChamp = participant["championId"]
-                LiveData = f"Playing {LiveChamp} for {GameLength} minutes."
+    if is_in_game:
+        game_length = str(live_data["game_length"]).split(" ")[0]
+        for participant in live_data["participants"]:
+            if participant["summonerId"] == summoner_id:
+                in_game_champion = participant["championId"]
+                live_data = f"Playing {in_game_champion} for {game_length} minutes."
                 break
     else:
-        LiveData = "N/A Playing"
+        live_data = "N/A Playing"
 
     # get macth time, champ name
 
-    summoner = summonerdata(
-        playerName,
-        Data["profileIconId"],
-        Data["summonerLevel"],
+    summoner = Summoner(
+        player_name,
+        summoner_data["profileIconId"],
+        summoner_data["summonerLevel"],
         rank,
-        RankedData[1]["wins"],
-        RankedData[1]["losses"],
+        ranked_data[1]["wins"],
+        ranked_data[1]["losses"],
         f"{winrate:.0f}",
-        ChampStr,
-        LiveData,
+        mastery,
+        live_data,
     )
 
     return summoner
 
 
-def createEmbed(player: summonerdata) -> discord.embeds.Embed:
+def createEmbed(player: Summoner) -> discord.embeds.Embed:
 
     message = discord.Embed(
         title=f"{player.name}", description="Here are all the stats we found:"
