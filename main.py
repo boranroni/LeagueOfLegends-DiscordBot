@@ -21,12 +21,23 @@ client = discord.Client(intents=intents)
 
 class Summoner:
     def __init__(
-        self, name, icon, level, rank, win, lose, winrate, topchamps, livegame
+        self,
+        name,
+        icon,
+        level,
+        rank,
+        league_point,
+        win,
+        lose,
+        winrate,
+        topchamps,
+        livegame,
     ) -> None:
         self.name = name
         self.icon = icon
         self.level = level
         self.rank = rank
+        self.league_point = league_point
         self.win = win
         self.lose = lose
         self.winrate = winrate
@@ -55,9 +66,17 @@ async def on_message(message):
         await message.channel.send(embed=botMessage)
 
 
-def get_champname(ChampIdList):
-    resp = get("http://ddragon.leagueoflegends.com/cdn/12.6.1/data/en_US/champion.json")
+def get_champname(ChampId: str) -> str:
+    # print("looking for", ChampId)
+    resp = get(
+        "http://ddragon.leagueoflegends.com/cdn/12.22.1/data/en_US/champion.json"
+    )
     Data = resp.json()
+    for champ in Data["data"].values():
+        if champ["key"] == ChampId:
+            # print("found", champ["id"])
+            return champ["id"]
+    return ""
 
 
 def get_name_region(message: str) -> tuple[str, str]:
@@ -106,13 +125,25 @@ def get_profile_data(player_name: str, region: str) -> Summoner:
     is_in_game, live_data = get_live_data(LIVE_GAME_API)
 
     mastery = ""
-    for c in mastery_data:
-        # instead of champId, write championName
+
+    for c in range(len(mastery_data)):
+        champ_name = get_champname(str(mastery_data[c]["championId"]))
+        champ_point = str(mastery_data[c]["championPoints"])
+
         mastery = (
-            mastery + str(c["championId"]) + ": " + str(c["championPoints"]) + "\n"
+            mastery
+            + f"{c+1}. "
+            + champ_name
+            + ": "
+            + champ_point[:-3]
+            + "."
+            + champ_point[len(champ_point) - 3 :]
+            + "\n"
         )
 
-    rank = ranked_data[1]["tier"] + " " + ranked_data[1]["rank"].upper()
+    RANKS = ["I", "II", "III", "IV", "V"]
+    rank = ranked_data[1]["tier"] + " " + RANKS[len(ranked_data[1]["rank"]) - 1]
+    league_point = ranked_data[1]["leaguePoints"]
     winrate = (
         int(ranked_data[1]["wins"])
         / (int(ranked_data[1]["wins"]) + int(ranked_data[1]["losses"]))
@@ -121,22 +152,22 @@ def get_profile_data(player_name: str, region: str) -> Summoner:
 
     # if player is in game get necessary data
     if is_in_game:
-        game_length = str(live_data["game_length"]).split(" ")[0]
+        game_length = float(str(live_data["gameLength"]).split(" ")[0]) / 60.0
         for participant in live_data["participants"]:
             if participant["summonerId"] == summoner_id:
                 in_game_champion = participant["championId"]
-                live_data = f"Playing {in_game_champion} for {game_length} minutes."
+                live_champ = get_champname(str(in_game_champion))
+                live_data = f"Playing **{live_champ}** for {game_length:.1f} minutes."
                 break
     else:
         live_data = "N/A Playing"
-
-    # get macth time, champ name
 
     summoner = Summoner(
         player_name,
         summoner_data["profileIconId"],
         summoner_data["summonerLevel"],
         rank,
+        league_point,
         ranked_data[1]["wins"],
         ranked_data[1]["losses"],
         f"{winrate:.0f}",
@@ -158,7 +189,7 @@ def createEmbed(player: Summoner) -> discord.embeds.Embed:
     message.add_field(name="Level:", value=f"{player.level}")
     message.add_field(
         name="Ranked Stats:",
-        value=f"{player.rank.capitalize()}\n{player.win}W {player.lose}L\nWinrate: {player.winrate}%",
+        value=f"{player.rank}\n**{player.league_point}LP** {player.win}W {player.lose}L\nWinrate: {player.winrate}%",
         inline=True,
     )
     message.add_field(name="Top Champs:", value=f"{player.topchamps}", inline=False)
