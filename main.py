@@ -57,13 +57,67 @@ async def on_message(message):
         return
 
     if message.content.startswith("!profile"):
-        player_name, playerRegion = get_name_region(message.content)
-        summoner = get_profile_data(player_name, playerRegion)
+        player_name, player_region = get_name_region(message.content)
+        summoner = get_profile_data(player_name, player_region)
 
-        botMessage = createEmbed(summoner)
+        bot_message = create_profile_embed(summoner)
 
         await message.channel.send(f"{message.author.mention} here it is!")
-        await message.channel.send(embed=botMessage)
+        await message.channel.send(embed=bot_message)
+
+    elif message.content.startswith("!rotation"):
+        rotaion_champion_names = get_rotation_data(message.content)
+        bot_message = create_rotation_embed(rotaion_champion_names)
+
+        await message.channel.send(f"{message.author.mention} here it is!")
+        await message.channel.send(embed=bot_message)
+
+
+def create_rotation_embed(names: tuple[str, str]) -> discord.embeds.Embed:
+    message = discord.Embed(
+        title="Free Rotation",
+        description="Here is this weeks rotation:",
+        color=discord.Colour.from_rgb(248, 217, 28),
+    )
+    message.set_thumbnail(url="https://i.imgur.com/shAjLsZ.png")
+    message.add_field(name="᲼᲼", value=f"**{names[0]}**")
+    message.add_field(name="᲼᲼", value=f"**{names[1]}**", inline=True)
+    return message
+
+
+def get_rotation_data(message: str) -> tuple[str, str]:
+    REGION = message.split(" ")[1]
+    ROTATION_API = f"https://{REGION}1.api.riotgames.com/lol/platform/v3/champion-rotations?api_key={LOL_API_KEY}"
+    # print(ROTATION_API)
+    rotation_data = get_api_data(ROTATION_API)
+    champions_ids = rotation_data["freeChampionIds"]
+    champions_names = get_champion_names(champions_ids)
+
+    l_champions_names_string = ""
+    for i in range(8):
+        l_champions_names_string = l_champions_names_string + champions_names[i] + "\n"
+
+    r_champions_names_string = ""
+    for i in range(8, 16):
+        r_champions_names_string = r_champions_names_string + champions_names[i] + "\n"
+
+    return l_champions_names_string, r_champions_names_string
+
+
+def get_champion_names(ids: dict[str]) -> list[str]:
+    resp = get(
+        "http://ddragon.leagueoflegends.com/cdn/12.22.1/data/en_US/champion.json"
+    )
+    Data = resp.json()
+
+    look_up = {}
+    for champ in Data["data"].values():
+        look_up[champ["key"]] = champ["id"]
+    names = []
+    for id in ids:
+        names.append(look_up[str(id)])
+
+    return names
 
 
 def get_champname(ChampId: str) -> str:
@@ -178,10 +232,12 @@ def get_profile_data(player_name: str, region: str) -> Summoner:
     return summoner
 
 
-def createEmbed(player: Summoner) -> discord.embeds.Embed:
+def create_profile_embed(player: Summoner) -> discord.embeds.Embed:
 
     message = discord.Embed(
-        title=f"{player.name}", description="Here are all the stats we found:"
+        title=f"{player.name}",
+        description="Here are all the stats we found:",
+        color=discord.Colour.from_rgb(248, 217, 28),
     )
     message.set_thumbnail(
         url=f"https://ddragon.leagueoflegends.com/cdn/12.22.1/img/profileicon/{player.icon}.png"
@@ -189,13 +245,21 @@ def createEmbed(player: Summoner) -> discord.embeds.Embed:
     message.add_field(name="Level:", value=f"{player.level}")
     message.add_field(
         name="Ranked Stats:",
-        value=f"{player.rank}\n**{player.league_point}LP** {player.win}W {player.lose}L\nWinrate: {player.winrate}%",
+        value=f"{player.rank}\n**{player.league_point}LP**\n{player.win}W {player.lose}L\nWinrate: {player.winrate}%",
         inline=True,
     )
     message.add_field(name="Top Champs:", value=f"{player.topchamps}", inline=False)
     message.add_field(name="Live Game:", value=f"{player.livegame}")
 
     return message
+
+
+def get_names_region(message: str) -> str:
+    pass
+
+
+def get_pick_data():
+    pass
 
 
 def get_quote() -> str:
