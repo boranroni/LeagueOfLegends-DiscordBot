@@ -3,7 +3,8 @@ from requests import get
 import json
 import riotwatcher
 from time import sleep
-
+from bs4 import BeautifulSoup
+from re import findall
 
 f = open("keys.json")
 keys = json.load(f)
@@ -72,6 +73,15 @@ async def on_message(message):
         await message.channel.send(f"{message.author.mention} here it is!")
         await message.channel.send(embed=bot_message)
 
+    elif message.content.startswith("!counter"):
+        champion = message.content[9:]
+        champion = str(champion).capitalize()
+        counter_champions = get_counter_data(champion)
+        bot_message = create_counter_embed(counter_champions, champion)
+
+        await message.channel.send(f"{message.author.mention} here it is!")
+        await message.channel.send(embed=bot_message)
+
 
 def create_rotation_embed(names: tuple[str, str]) -> discord.embeds.Embed:
     message = discord.Embed(
@@ -83,6 +93,43 @@ def create_rotation_embed(names: tuple[str, str]) -> discord.embeds.Embed:
     message.add_field(name="᲼᲼", value=f"**{names[0]}**")
     message.add_field(name="᲼᲼", value=f"**{names[1]}**", inline=True)
     return message
+
+
+def create_counter_embed(champions: str, champion: str) -> discord.embeds.Embed:
+
+    message = discord.Embed(
+        title="Counter Champions",
+        description=f"Here here are the best picks for **{champion}**:",
+        color=discord.Colour.from_rgb(248, 217, 28),
+    )
+    champion = champion.split(" ")[0] + champion.split(" ")[1].capitalize()
+    print(
+        f"https://ddragon.leagueoflegends.com/cdn/img/champion/splash/{champion}_0.jpg"
+    )
+    message.set_thumbnail(
+        url=f"https://ddragon.leagueoflegends.com/cdn/img/champion/splash/{champion}_0.jpg"
+    )
+    message.add_field(name="Champions:", value=f"{champions}")
+
+    return message
+
+
+def get_counter_data(champion: str) -> str:
+    champion = champion.replace(" ", "-")
+    LINK = f"https://www.counterstats.net/league-of-legends/{champion}"
+    resp = get(LINK)
+    soup = BeautifulSoup(resp.content, "html.parser")
+    data = soup.find_all("div", class_="inset")
+
+    counter_champions = ""
+    for i in range(5):
+        str_data = str(data[i])
+
+        counter = findall("(?<=square/)(.*)(?=-60x.png)", str_data)[0]
+        counter = str(counter).replace("-", " ").capitalize()
+        counter_champions = counter_champions + counter + "\n"
+
+    return counter_champions
 
 
 def get_rotation_data(message: str) -> tuple[str, str]:
