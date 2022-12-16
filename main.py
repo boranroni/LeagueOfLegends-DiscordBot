@@ -54,6 +54,7 @@ async def on_ready():
 
 @client.event
 async def on_message(message):
+
     if message.author == client.user:
         return
 
@@ -82,6 +83,101 @@ async def on_message(message):
         await message.channel.send(f"{message.author.mention} here it is!")
         await message.channel.send(embed=bot_message)
 
+    elif message.content.startswith("!livegame"):
+        player_name, player_region = get_name_region(message.content)
+
+        (
+            in_game,
+            p_names,
+            p_champ_names,
+            p_ranks,
+            p_leaguepoints,
+            p_winrate,
+            game_length,
+        ) = get_live_game_data(player_name, player_region)
+
+        if in_game:
+            bot_message = create_live_game_embed(
+                p_names, p_champ_names, p_ranks, p_leaguepoints, p_winrate, game_length
+            )
+            await message.channel.send(f"{message.author.mention} here it is!")
+            await message.channel.send(embed=bot_message[0])
+            await message.channel.send(embed=bot_message[1])
+            await message.channel.send(embed=bot_message[2])
+
+        else:
+            await message.channel.send(
+                f"{message.author.mention} \nSummoner **{player_name}** is not playing at the moment."
+            )
+
+    elif message.content.startswith("!quote"):
+        quoute = get_quote()
+        await message.channel.send(f"{message.author.mention} here it is!")
+        await message.channel.send(quoute)
+
+
+def create_live_game_embed(
+    player_names: list[str],
+    champion_names: list[str],
+    player_ranks: list[str],
+    league_points: list[int],
+    winrates: list[str],
+    game_length: str,
+) -> tuple[discord.embeds.Embed, discord.embeds.Embed]:
+    embed_name_blue = ""
+    embed_rank_blue = ""
+    for i in range(5):
+        embed_name_blue = (
+            embed_name_blue + f"{player_names[i]} **({champion_names[i]})**\n"
+        )
+        embed_rank_blue = (
+            embed_rank_blue
+            + f"{player_ranks[i]} ({league_points[i]}LP) **{winrates[i]}%**\n"
+        )
+
+    embed_name_red = ""
+    embed_rank_red = ""
+    for i in range(5, 10):
+        embed_name_red = (
+            embed_name_red + f"{player_names[i]} **({champion_names[i]})**\n"
+        )
+        embed_rank_red = (
+            embed_rank_red
+            + f"{player_ranks[i]} ({league_points[i]}LP) **{winrates[i]}%**\n"
+        )
+
+    main = discord.Embed(
+        title=f"Live Game:",
+        description=f"Playing for **{game_length}** minutes.",
+        color=discord.Colour.from_rgb(248, 217, 28),
+    )
+
+    blue_message = discord.Embed(
+        title="",
+        description="",
+        color=discord.Colour.from_rgb(0, 0, 255),
+    )
+
+    blue_message.add_field(name="Blue Team:", value=embed_name_blue)
+
+    blue_message.add_field(
+        name="Ranks/WR:",
+        value=f"{embed_rank_blue}",
+        inline=True,
+    )
+    red_message = discord.Embed(
+        title="",
+        description="",
+        color=discord.Colour.from_rgb(255, 0, 0),
+    )
+    red_message.add_field(name="Red Team:", value=f"{embed_name_red}")
+    red_message.add_field(
+        name="Ranks/WR:",
+        value=f"{embed_rank_red}",
+        inline=True,
+    )
+    return main, blue_message, red_message
+
 
 def create_rotation_embed(names: tuple[str, str]) -> discord.embeds.Embed:
     message = discord.Embed(
@@ -102,14 +198,105 @@ def create_counter_embed(champions: str, champion: str) -> discord.embeds.Embed:
         description=f"Here here are the best picks for **{champion}**:",
         color=discord.Colour.from_rgb(248, 217, 28),
     )
-    champion = champion.split(" ")[0] + champion.split(" ")[1].capitalize()
-    print(
-        f"https://ddragon.leagueoflegends.com/cdn/img/champion/splash/{champion}_0.jpg"
-    )
+    if len(champion.split(" ")) > 1:
+        champion = champion.split(" ")[0] + champion.split(" ")[1].capitalize()
+
     message.set_thumbnail(
         url=f"https://ddragon.leagueoflegends.com/cdn/img/champion/splash/{champion}_0.jpg"
     )
     message.add_field(name="Champions:", value=f"{champions}")
+
+    return message
+
+
+def get_live_game_data(player_name: str, region: str):
+
+    API_URL = f"https://{region}1.api.riotgames.com/lol/summoner/v4/summoners/by-name/{player_name}?api_key={LOL_API_KEY}"
+    summoner_data = get_api_data(API_URL)
+
+    summoner_id = summoner_data["id"]
+
+    LIVE_GAME_API = f"https://{region}1.api.riotgames.com/lol/spectator/v4/active-games/by-summoner/{summoner_id}?api_key={LOL_API_KEY}"
+    is_in_game, live_data = get_live_data(LIVE_GAME_API)
+
+    if not is_in_game:
+        return False, "", "", "", "", "", ""
+
+    participants = live_data["participants"]
+
+    p_names = []
+    p_champ_ids = []
+    p_ids = []
+    p_ranks = []
+    p_leaguepoints = []
+    p_winrate = []
+
+    for participant in participants:
+
+        p_names.append(participant["summonerName"])
+        p_champ_ids.append(participant["championId"])
+        p_ids.append(participant["summonerId"])
+
+    p_champ_names = get_champion_names(p_champ_ids)
+
+    RANKS = ["I", "II", "III", "IV", "V"]
+
+    for id in p_ids:
+        RANKED_API = f"https://{region}1.api.riotgames.com/lol/league/v4/entries/by-summoner/{id}?api_key={LOL_API_KEY}"
+        ranked_data = get_api_data(RANKED_API)
+
+        try:
+            rank = ranked_data[1]["tier"] + " " + RANKS[len(ranked_data[1]["rank"]) - 1]
+            league_point = ranked_data[1]["leaguePoints"]
+            winrate = (
+                int(ranked_data[1]["wins"])
+                / (int(ranked_data[1]["wins"]) + int(ranked_data[1]["losses"]))
+                * 100
+            )
+        except:
+            rank = ranked_data[0]["tier"] + " " + RANKS[len(ranked_data[0]["rank"]) - 1]
+            league_point = ranked_data[0]["leaguePoints"]
+            winrate = (
+                int(ranked_data[0]["wins"])
+                / (int(ranked_data[0]["wins"]) + int(ranked_data[0]["losses"]))
+                * 100
+            )
+
+        p_leaguepoints.append(league_point)
+        p_ranks.append(rank)
+        p_winrate.append(f"{winrate:.0f}")
+
+    game_length = float(str(live_data["gameLength"]).split(" ")[0]) / 60.0
+
+    return (
+        True,
+        p_names,
+        p_champ_names,
+        p_ranks,
+        p_leaguepoints,
+        p_winrate,
+        f"{game_length:.1f}",
+    )
+
+
+def create_profile_embed(player: Summoner) -> discord.embeds.Embed:
+
+    message = discord.Embed(
+        title=f"{player.name}",
+        description="Here are all the stats we found:",
+        color=discord.Colour.from_rgb(248, 217, 28),
+    )
+    message.set_thumbnail(
+        url=f"https://ddragon.leagueoflegends.com/cdn/12.22.1/img/profileicon/{player.icon}.png"
+    )
+    message.add_field(name="Level:", value=f"{player.level}")
+    message.add_field(
+        name="Ranked Stats:",
+        value=f"{player.rank}\n**{player.league_point}LP**\n{player.win}W {player.lose}L\nWinrate: {player.winrate}%",
+        inline=True,
+    )
+    message.add_field(name="Top Champs:", value=f"{player.topchamps}", inline=False)
+    message.add_field(name="Live Game:", value=f"{player.livegame}")
 
     return message
 
@@ -151,7 +338,7 @@ def get_rotation_data(message: str) -> tuple[str, str]:
     return l_champions_names_string, r_champions_names_string
 
 
-def get_champion_names(ids: dict[str]) -> list[str]:
+def get_champion_names(ids) -> list[str]:
     resp = get(
         "http://ddragon.leagueoflegends.com/cdn/12.22.1/data/en_US/champion.json"
     )
@@ -192,6 +379,9 @@ def get_api_data(Link: str) -> dict:
     while True:
         resp = get(Link)
         if resp.status_code == 200 or resp.status_code == 404:
+            break
+        elif resp.status_code == 503:
+            print(f"Error {resp.status_code} happened. Service unable.")
             break
         print(f"Error {resp.status_code} happened. Sleeping for 10 sec...")
         sleep(10)
@@ -264,7 +454,7 @@ def get_profile_data(player_name: str, region: str) -> Summoner:
         live_data = "N/A Playing"
 
     summoner = Summoner(
-        player_name,
+        summoner_data["name"],
         summoner_data["profileIconId"],
         summoner_data["summonerLevel"],
         rank,
@@ -277,28 +467,6 @@ def get_profile_data(player_name: str, region: str) -> Summoner:
     )
 
     return summoner
-
-
-def create_profile_embed(player: Summoner) -> discord.embeds.Embed:
-
-    message = discord.Embed(
-        title=f"{player.name}",
-        description="Here are all the stats we found:",
-        color=discord.Colour.from_rgb(248, 217, 28),
-    )
-    message.set_thumbnail(
-        url=f"https://ddragon.leagueoflegends.com/cdn/12.22.1/img/profileicon/{player.icon}.png"
-    )
-    message.add_field(name="Level:", value=f"{player.level}")
-    message.add_field(
-        name="Ranked Stats:",
-        value=f"{player.rank}\n**{player.league_point}LP**\n{player.win}W {player.lose}L\nWinrate: {player.winrate}%",
-        inline=True,
-    )
-    message.add_field(name="Top Champs:", value=f"{player.topchamps}", inline=False)
-    message.add_field(name="Live Game:", value=f"{player.livegame}")
-
-    return message
 
 
 def get_names_region(message: str) -> str:
